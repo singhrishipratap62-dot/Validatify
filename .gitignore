@@ -1,0 +1,7 @@
+# Supabase credentials (keep out of version control)
+config.js
+
+# OS files
+.DS_Store
+Thumbs.db
+.vercel
