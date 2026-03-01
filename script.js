@@ -2,13 +2,10 @@
 // VALIDATIFY — Scripts (Supabase-backed)
 // ===========================
 
-document.addEventListener('DOMContentLoaded', async () => {
-    // --- Supabase Client ---
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    const TOTAL_SPOTS = 100;
-
-    // --- Scroll Animations ---
+document.addEventListener('DOMContentLoaded', () => {
+    // =============================================
+    // 1. ANIMATIONS — Always runs, no dependencies
+    // =============================================
     const animatedEls = document.querySelectorAll('.animate-in');
     const observer = new IntersectionObserver(
         (entries) => {
@@ -23,16 +20,60 @@ document.addEventListener('DOMContentLoaded', async () => {
     );
     animatedEls.forEach((el) => observer.observe(el));
 
-    // --- Counter: Fetch live count from Supabase ---
+    // =============================================
+    // 2. SMOOTH SCROLL — Always runs
+    // =============================================
+    document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
+        anchor.addEventListener('click', (e) => {
+            const target = document.querySelector(anchor.getAttribute('href'));
+            if (target) {
+                e.preventDefault();
+                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
+    });
+
+    // =============================================
+    // 3. NAV SCROLL EFFECT — Always runs
+    // =============================================
+    const nav = document.querySelector('.nav');
+    if (nav) {
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 50) {
+                nav.style.background = 'rgba(10, 10, 10, 0.92)';
+            } else {
+                nav.style.background = 'rgba(10, 10, 10, 0.7)';
+            }
+        });
+    }
+
+    // =============================================
+    // 4. SUPABASE — Wrapped in try/catch, never
+    //    crashes the rest of the page
+    // =============================================
+    const TOTAL_SPOTS = 100;
+    let supabaseClient = null;
+
+    try {
+        if (typeof SUPABASE_URL !== 'undefined' && typeof SUPABASE_ANON_KEY !== 'undefined' && window.supabase) {
+            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } else {
+            console.warn('Supabase config not found — form will work in offline/demo mode.');
+        }
+    } catch (err) {
+        console.warn('Supabase init failed:', err.message);
+    }
+
+    // --- Counter ---
     async function fetchSpotsRemaining() {
+        if (!supabaseClient) return TOTAL_SPOTS;
         try {
-            const { count, error } = await supabase
+            const { count, error } = await supabaseClient
                 .from('waitlist_signups')
                 .select('*', { count: 'exact', head: true });
-
             if (error) {
                 console.error('Counter fetch error:', error.message);
-                return TOTAL_SPOTS; // fallback
+                return TOTAL_SPOTS;
             }
             return Math.max(0, TOTAL_SPOTS - (count || 0));
         } catch (err) {
@@ -51,9 +92,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Load initial count
-    const initialSpots = await fetchSpotsRemaining();
-    updateCounterDisplays(initialSpots);
+    // Load initial count (async, non-blocking)
+    fetchSpotsRemaining().then(updateCounterDisplays);
 
     // --- Form Handling ---
     const form = document.getElementById('waitlist-form');
@@ -87,6 +127,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
 
+            // If no Supabase, show success anyway (demo mode)
+            if (!supabaseClient) {
+                form.style.display = 'none';
+                if (successMsg) successMsg.classList.add('show');
+                return;
+            }
+
             // Check spots
             const spots = await fetchSpotsRemaining();
             if (spots <= 0) {
@@ -100,13 +147,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             try {
-                // Insert into Supabase
-                const { error } = await supabase
+                const { error } = await supabaseClient
                     .from('waitlist_signups')
                     .insert([{ name, email, niche: niche || '' }]);
 
                 if (error) {
-                    // Handle duplicate email
                     if (error.code === '23505' || error.message.includes('duplicate')) {
                         showError('This email is already on the waitlist!');
                     } else {
@@ -116,19 +161,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
 
-                // Success — update counter & show message
+                // Success
                 const newSpots = await fetchSpotsRemaining();
                 updateCounterDisplays(newSpots);
-
                 form.style.display = 'none';
-                if (successMsg) {
-                    successMsg.classList.add('show');
-                }
+                if (successMsg) successMsg.classList.add('show');
             } catch (err) {
                 showError('Network error. Please check your connection and try again.');
                 console.error('Submit failed:', err);
             } finally {
-                // Reset button
                 if (submitBtn) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = originalBtnText;
@@ -146,28 +187,5 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function isValidEmail(email) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    }
-
-    // --- Smooth Scroll for Nav CTA ---
-    document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
-        anchor.addEventListener('click', (e) => {
-            const target = document.querySelector(anchor.getAttribute('href'));
-            if (target) {
-                e.preventDefault();
-                target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-        });
-    });
-
-    // --- Nav Background on Scroll ---
-    const nav = document.querySelector('.nav');
-    if (nav) {
-        window.addEventListener('scroll', () => {
-            if (window.scrollY > 50) {
-                nav.style.background = 'rgba(10, 10, 10, 0.92)';
-            } else {
-                nav.style.background = 'rgba(10, 10, 10, 0.7)';
-            }
-        });
     }
 });
